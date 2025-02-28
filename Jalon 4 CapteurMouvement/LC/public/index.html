@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Données Arduino</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        #ledButton, #capteurButton {
+            font-size: 1.5rem;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+        }
+        .led-on {
+            background-color: green;
+        }
+        .led-off {
+            background-color: red;
+        }
+        .capteur-on {
+            background-color: blue;
+        }
+        .capteur-off {
+            background-color: gray;
+        }
+        #capteurState {
+            font-size: 1.5rem;
+            margin: 10px 0;
+            color: blue;
+        }
+        #detectionContainer {
+            width: 80%;
+            max-width: 600px;
+            margin: 20px auto;
+            border: 1px solid black;
+            padding: 10px;
+            overflow-y: auto;
+            height: 300px;
+            position: relative;
+        }
+        .detection-log {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 8px;
+            margin: 5px 0;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Données Arduino en temps réel</h1>
+    <p id="ledState">État de la LED :</p>
+    <button id="ledButton" class="led-off">OFF</button>
+    <p id="capteurState">État du capteur :</p>
+    <button id="capteurButton" class="capteur-off">OFF</button>
+    
+    <div id="detectionContainer">
+        <div id="detectionLogs"></div>
+    </div>
+
+    <script>
+        let detectionLogs = [];
+        const maxLogs = 100;
+
+        function renderLogs() {
+            const container = document.getElementById('detectionLogs');
+            container.innerHTML = '';
+            detectionLogs.forEach(log => {
+                const logDiv = document.createElement('div');
+                logDiv.classList.add('detection-log');
+                logDiv.textContent = `${log.detectionTime || 'N/A'} - ${log.message || 'N/A'}`;
+                container.appendChild(logDiv);
+            });
+        }
+
+        // Charger les logs depuis le serveur
+        fetch('/detectionLogs')
+            .then(response => response.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    detectionLogs = data.reverse();
+                    renderLogs();
+                }
+            })
+            .catch(error => console.error('Erreur de chargement des logs:', error));
+
+        // Connexion au WebSocket
+        const socket = new WebSocket('ws://192.168.65.198:8080');
+
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                const ledButton = document.getElementById('ledButton');
+                const ledState = document.getElementById('ledState');
+                const capteurState = document.getElementById('capteurState');
+                const capteurButton = document.getElementById('capteurButton');
+                
+                if (message.ledState !== undefined) {
+                    if (message.ledState) {
+                        ledButton.textContent = 'ON';
+                        ledButton.classList.remove('led-off');
+                        ledButton.classList.add('led-on');
+                        ledState.textContent = 'État de la LED : Allumée';
+                    } else {
+                        ledButton.textContent = 'OFF';
+                        ledButton.classList.remove('led-on');
+                        ledButton.classList.add('led-off');
+                        ledState.textContent = 'État de la LED : Éteinte';
+                    }
+                }
+                
+                if (message.capteurState !== undefined) {
+                    if (message.capteurState) {
+                        capteurButton.textContent = 'ON';
+                        capteurButton.classList.remove('capteur-off');
+                        capteurButton.classList.add('capteur-on');
+                        capteurState.textContent = 'État du capteur : Activé';
+                    } else {
+                        capteurButton.textContent = 'OFF';
+                        capteurButton.classList.remove('capteur-on');
+                        capteurButton.classList.add('capteur-off');
+                        capteurState.textContent = 'État du capteur : Désactivé';
+                    }
+                }
+                
+                if (message.detectionLogs !== undefined && Array.isArray(message.detectionLogs)) {
+                    message.detectionLogs.forEach(log => {
+                        if (log.detectionTime && log.message) {
+                            detectionLogs.unshift(log);
+                        }
+                    });
+                    detectionLogs = detectionLogs.slice(0, maxLogs);
+                    renderLogs();
+                }
+            } catch (err) {
+                console.error('Erreur lors du traitement des données WebSocket:', err);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('Erreur WebSocket:', error);
+        };
+
+        socket.onclose = () => {
+            console.warn('Connexion WebSocket fermée.');
+            document.getElementById('ledButton').textContent = 'Connexion fermée';
+            document.getElementById('ledButton').classList.remove('led-on', 'led-off');
+            document.getElementById('ledButton').disabled = true;
+            document.getElementById('capteurButton').textContent = 'Connexion fermée';
+            document.getElementById('capteurButton').classList.remove('capteur-on', 'capteur-off');
+            document.getElementById('capteurButton').disabled = true;
+            document.getElementById('ledState').textContent = 'État de la LED : Connexion fermée';
+            document.getElementById('capteurState').textContent = 'État du capteur : Connexion fermée.';
+        };
+    </script>
+</body>
+</html>
